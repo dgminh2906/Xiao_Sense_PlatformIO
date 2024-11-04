@@ -25,7 +25,7 @@ static bool receiving = false;
 float features[EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE] = {0};
 String global_data;
 
-#define PSIZE 20
+#define PSIZE 5
 String predictions[PSIZE];
 int pCounter = 0;
 
@@ -40,7 +40,7 @@ String getFinalPrediction()
   int rest = 0;
   int walk = 0;
   int run = 0;
-  int stair = 0;
+  int goingstair = 0;
   int unknown = 0;
 
   String finalLabel = "1";
@@ -64,7 +64,7 @@ String getFinalPrediction()
     }
     else if (label == "4")
     {
-      stair++;
+      goingstair++;
     }
     else
     {
@@ -72,7 +72,7 @@ String getFinalPrediction()
     }
   }
 
-  if (stair > PSIZE / 3)
+  if (goingstair > PSIZE / 3)
   {
     finalLabel = "4";
   }
@@ -89,7 +89,7 @@ String getFinalPrediction()
     finalLabel = "1";
   }
 
-  ei_printf("REST = %d, WALK = %d, RUN = %d, STAIR = %d \n", rest, walk, run, stair);
+  ei_printf("REST = %d, WALK = %d, RUN = %d, GOINGSTAIR = %d \n", rest, walk, run, goingstair);
 
   return finalLabel;
 }
@@ -221,7 +221,7 @@ void loop()
       label = result.classification[ix].label;
     }
   }
-
+  ei_printf(" %s",label.c_str());
   if (label == "rest")
   {
     label = "1";
@@ -234,7 +234,7 @@ void loop()
   {
     label = "3";
   }
-  else if (label == "stair")
+  else if (label == "goingstair")
   {
     label = "4";
   }
