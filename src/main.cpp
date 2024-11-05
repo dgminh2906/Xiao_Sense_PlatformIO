@@ -74,19 +74,19 @@ String getFinalPrediction()
 
   if (goingstair > PSIZE / 3)
   {
-    finalLabel = "4";
+    finalLabel = "goingstair";
   }
   else if (run > PSIZE / 3)
   {
-    finalLabel = "3";
+    finalLabel = "running";
   }
   else if (walk > PSIZE / 3)
   {
-    finalLabel = "2";
+    finalLabel = "walking";
   }
   else
   {
-    finalLabel = "1";
+    finalLabel = "rest";
   }
 
   ei_printf("REST = %d, WALK = %d, RUN = %d, GOINGSTAIR = %d \n", rest, walk, run, goingstair);
@@ -162,7 +162,6 @@ void setup()
 
   // start advertising
   BLE.advertise();
-
   // Initialize the IMU sensor
   if (myIMU.begin() != 0)
   {
@@ -221,7 +220,7 @@ void loop()
       label = result.classification[ix].label;
     }
   }
-  ei_printf(" %s",label.c_str());
+  
   if (label == "rest")
   {
     label = "1";
@@ -251,7 +250,8 @@ void loop()
     pCounter = 0;
 
     String fLabel = getFinalPrediction();
-    global_data = global_data + "," + fLabel;
+    // global_data = global_data + "," + fLabel;
+    global_data = fLabel;
 
     ei_printf("######  Final prediction %s \n", fLabel.c_str());
 
