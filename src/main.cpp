@@ -8,7 +8,7 @@
 #define SERVICE_UUID "4D7D1101-EE27-40B2-836C-17505C1044D7"
 #define TX_PRED_CHAR_UUID "4D7D1106-EE27-40B2-836C-17505C1044D7"
 #define TX_BAT_CHAR_UUID "4D7D1107-EE27-40B2-836C-17505C1044D7"
-#define RX_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
+// #define RX_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
 #define ACCELERATION_DUE_TO_GRAVITY 9.81f
 #define GYRO_ANGLE_TO_RADIAN 3.141f / 180.0f
 
@@ -16,7 +16,7 @@
 LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 
 BLEService bleService(SERVICE_UUID); // Bluetooth Low Energy LED Service
-BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
+// BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
 BLEStringCharacteristic txPredCharacteristic(TX_PRED_CHAR_UUID, BLERead | BLENotify, 1024);
 BLEStringCharacteristic txBatCharacteristic(TX_BAT_CHAR_UUID, BLERead | BLENotify, 1024);
 
@@ -98,6 +98,7 @@ void blePeripheralConnectHandler(BLEDevice central)
 {
   // central connected event handler
   Serial.print("Connected event, central: ");
+  receiving = true;
   Serial.println(central.address());
   digitalWrite(LEDB, LOW);
   digitalWrite(LEDR, HIGH);
@@ -113,16 +114,16 @@ void blePeripheralDisconnectHandler(BLEDevice central)
   digitalWrite(LEDR, LOW);
 }
 
-void rxCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic)
-{
-  // central wrote new value to characteristic, update LED
-  String value = rxCharacteristic.value();
-  if (value == "r")
-  {
-    receiving = true;
-    global_data = "";
-  }
-}
+// void rxCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic)
+// {
+//   // central wrote new value to characteristic, update LED
+//   String value = rxCharacteristic.value();
+//   if (value == "r")
+//   {
+//     receiving = true;
+//     global_data = "";
+//   }
+// }
 
 void setup()
 {
@@ -152,13 +153,13 @@ void setup()
   // add the characteristic to the service
   bleService.addCharacteristic(txBatCharacteristic);
   bleService.addCharacteristic(txPredCharacteristic);
-  bleService.addCharacteristic(rxCharacteristic);
+  // bleService.addCharacteristic(rxCharacteristic);
   // add service
   BLE.addService(bleService);
 
   BLE.setEventHandler(BLEConnected, blePeripheralConnectHandler);
   BLE.setEventHandler(BLEDisconnected, blePeripheralDisconnectHandler);
-  rxCharacteristic.setEventHandler(BLEWritten, rxCharacteristicWritten);
+  // rxCharacteristic.setEventHandler(BLEWritten, rxCharacteristicWritten);
 
   // start advertising
   BLE.advertise();
