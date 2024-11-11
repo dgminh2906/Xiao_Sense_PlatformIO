@@ -226,11 +226,11 @@ void loop()
   {
     label = "1";
   }
-  else if (label == "walk")
+  else if (label == "walking")
   {
     label = "2";
   }
-  else if (label == "run")
+  else if (label == "running")
   {
     label = "3";
   }
@@ -238,10 +238,7 @@ void loop()
   {
     label = "4";
   }
-  else
-  {
-    label = "0";
-  }
+
   ei_printf("$$$$ Detected %s with score %f \n", label.c_str(), score);
 
   predictions[pCounter++] = label;

@@ -1,3 +1,3 @@
 seeed-studio/Seeed Arduino LSM6DS3@^2.0.3
+./lib/Motion-detection-with-XIAO-Sense_inferencing_V2
 arduino-libraries/ArduinoBLE@^1.3.1
-./lib/motion-detection-with-xiao-sense-v4.zip
