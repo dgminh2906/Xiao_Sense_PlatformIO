@@ -6,9 +6,18 @@
 
 #define BLENAME "XIAO_SENSE"
 #define SERVICE_UUID "4D7D1101-EE27-40B2-836C-17505C1044D7"
-#define TX_PRED_CHAR_UUID "4D7D1106-EE27-40B2-836C-17505C1044D7"
-#define TX_BAT_CHAR_UUID "4D7D1107-EE27-40B2-836C-17505C1044D7"
-// #define RX_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
+
+#define ACC_X_UUID "4D7D1102-EE27-40B2-836C-17505C1044D7"
+#define ACC_Y_UUID "4D7D1103-EE27-40B2-836C-17505C1044D7"
+#define ACC_Z_UUID "4D7D1104-EE27-40B2-836C-17505C1044D7"
+#define GYRO_X_UUID "4D7D1105-EE27-40B2-836C-17505C1044D7"
+#define GYRO_Y_UUID "4D7D1106-EE27-40B2-836C-17505C1044D7"
+#define GYRO_Z_UUID "4D7D1107-EE27-40B2-836C-17505C1044D7"
+
+#define TX_PRED_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
+#define TX_BAT_CHAR_UUID "4D7D1109-EE27-40B2-836C-17505C1044D7"
+// #define RX_CHAR_UUID "4D7D1110-EE27-40B2-836C-17505C1044D7"
+
 #define ACCELERATION_DUE_TO_GRAVITY 9.81f
 #define GYRO_ANGLE_TO_RADIAN 3.141f / 180.0f
 
@@ -16,6 +25,14 @@
 LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 
 BLEService bleService(SERVICE_UUID); // Bluetooth Low Energy LED Service
+
+BLEStringCharacteristic txAccXCharacteristic(ACC_X_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txAccYCharacteristic(ACC_Y_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txAccZCharacteristic(ACC_Z_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txGyroXCharacteristic(GYRO_X_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txGyroYCharacteristic(GYRO_Y_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txGyroZCharacteristic(GYRO_Z_UUID, BLERead | BLENotify, 1024);
+
 // BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
 BLEStringCharacteristic txPredCharacteristic(TX_PRED_CHAR_UUID, BLERead | BLENotify, 1024);
 BLEStringCharacteristic txBatCharacteristic(TX_BAT_CHAR_UUID, BLERead | BLENotify, 1024);
@@ -178,24 +195,25 @@ void setup()
 void loop()
 {
   BLEDevice central = BLE.central();
+
+  // Collect data
   for (size_t ix = 0; ix < EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE; ix += 6)
   {
-    // Collect data
     features[ix] = myIMU.readFloatAccelX() * ACCELERATION_DUE_TO_GRAVITY;
     features[ix + 1] = myIMU.readFloatAccelY() * ACCELERATION_DUE_TO_GRAVITY;
     features[ix + 2] = myIMU.readFloatAccelZ() * ACCELERATION_DUE_TO_GRAVITY;
     features[ix + 3] = myIMU.readFloatGyroX() * GYRO_ANGLE_TO_RADIAN;
     features[ix + 4] = myIMU.readFloatGyroY() * GYRO_ANGLE_TO_RADIAN;
     features[ix + 5] = myIMU.readFloatGyroZ() * GYRO_ANGLE_TO_RADIAN;
-    delay(EI_CLASSIFIER_INTERVAL_MS);
-  }
 
-  if (sizeof(features) / sizeof(float) != EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE)
-  {
-    ei_printf("The size of your 'features' array is not correct. Expected %u items, but had %u\n",
-              EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE, sizeof(features) / sizeof(float));
-    delay(1000);
-    return;
+    txAccXCharacteristic.writeValue(String(features[ix], 4));
+    txAccYCharacteristic.writeValue(String(features[ix + 1], 4));
+    txAccZCharacteristic.writeValue(String(features[ix + 2], 4));
+    txGyroXCharacteristic.writeValue(String(features[ix + 3], 4));
+    txGyroYCharacteristic.writeValue(String(features[ix + 4], 4));
+    txGyroZCharacteristic.writeValue(String(features[ix + 5], 4));
+
+    delay(EI_CLASSIFIER_INTERVAL_MS);
   }
 
   // Run the classifier
@@ -205,14 +223,14 @@ void loop()
   features_signal.total_length = sizeof(features) / sizeof(features[0]);
   features_signal.get_data = &raw_feature_get_data;
 
-  // invoke the impulse
+  // Invoke the impulse
   EI_IMPULSE_ERROR res = run_classifier(&features_signal, &result, false /* debug */);
   if (res != EI_IMPULSE_OK)
     return;
 
   float score = 0;
   String label = "";
-
+  // Get result after classifier
   for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
   {
     if (result.classification[ix].value > score)
