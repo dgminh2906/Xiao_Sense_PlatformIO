@@ -7,12 +7,12 @@
 #define BLENAME "XIAO_SENSE"
 #define SERVICE_UUID "4D7D1101-EE27-40B2-836C-17505C1044D7"
 
-#define ACC_X_UUID "4D7D1102-EE27-40B2-836C-17505C1044D7"
-#define ACC_Y_UUID "4D7D1103-EE27-40B2-836C-17505C1044D7"
-#define ACC_Z_UUID "4D7D1104-EE27-40B2-836C-17505C1044D7"
-#define GYRO_X_UUID "4D7D1105-EE27-40B2-836C-17505C1044D7"
-#define GYRO_Y_UUID "4D7D1106-EE27-40B2-836C-17505C1044D7"
-#define GYRO_Z_UUID "4D7D1107-EE27-40B2-836C-17505C1044D7"
+#define TX_ACC_X_UUID "4D7D1102-EE27-40B2-836C-17505C1044D7"
+#define TX_ACC_Y_UUID "4D7D1103-EE27-40B2-836C-17505C1044D7"
+#define TX_ACC_Z_UUID "4D7D1104-EE27-40B2-836C-17505C1044D7"
+#define TX_GYRO_X_UUID "4D7D1105-EE27-40B2-836C-17505C1044D7"
+#define TX_GYRO_Y_UUID "4D7D1106-EE27-40B2-836C-17505C1044D7"
+#define TX_GYRO_Z_UUID "4D7D1107-EE27-40B2-836C-17505C1044D7"
 
 #define TX_PRED_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
 #define TX_BAT_CHAR_UUID "4D7D1109-EE27-40B2-836C-17505C1044D7"
@@ -26,12 +26,12 @@ LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 
 BLEService bleService(SERVICE_UUID); // Bluetooth Low Energy LED Service
 
-BLEStringCharacteristic txAccXCharacteristic(ACC_X_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txAccYCharacteristic(ACC_Y_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txAccZCharacteristic(ACC_Z_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txGyroXCharacteristic(GYRO_X_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txGyroYCharacteristic(GYRO_Y_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txGyroZCharacteristic(GYRO_Z_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txAccXCharacteristic(TX_ACC_X_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txAccYCharacteristic(TX_ACC_Y_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txAccZCharacteristic(TX_ACC_Z_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txGyroXCharacteristic(TX_GYRO_X_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txGyroYCharacteristic(TX_GYRO_Y_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txGyroZCharacteristic(TX_GYRO_Z_UUID, BLERead | BLENotify, 1024);
 
 // BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
 BLEStringCharacteristic txPredCharacteristic(TX_PRED_CHAR_UUID, BLERead | BLENotify, 1024);
@@ -52,64 +52,64 @@ int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
   return 0;
 }
 
-String getFinalPrediction()
-{
-  int rest = 0;
-  int walk = 0;
-  int run = 0;
-  int goingstair = 0;
-  int unknown = 0;
+// String getFinalPrediction()
+// {
+//   int rest = 0;
+//   int walk = 0;
+//   int run = 0;
+//   int goingstair = 0;
+//   int unknown = 0;
 
-  String finalLabel = "1";
+//   String finalLabel = "1";
 
-  for (int i = 0; i < PSIZE; i++)
-  {
+//   for (int i = 0; i < PSIZE; i++)
+//   {
 
-    String label = predictions[i];
+//     String label = predictions[i];
 
-    if (label == "1")
-    {
-      rest++;
-    }
-    else if (label == "2")
-    {
-      walk++;
-    }
-    else if (label == "3")
-    {
-      run++;
-    }
-    else if (label == "4")
-    {
-      goingstair++;
-    }
-    else
-    {
-      unknown++;
-    }
-  }
+//     if (label == "1")
+//     {
+//       rest++;
+//     }
+//     else if (label == "2")
+//     {
+//       walk++;
+//     }
+//     else if (label == "3")
+//     {
+//       run++;
+//     }
+//     else if (label == "4")
+//     {
+//       goingstair++;
+//     }
+//     else
+//     {
+//       unknown++;
+//     }
+//   }
 
-  if (goingstair > PSIZE / 3)
-  {
-    finalLabel = "goingstair";
-  }
-  else if (run > PSIZE / 3)
-  {
-    finalLabel = "running";
-  }
-  else if (walk > PSIZE / 3)
-  {
-    finalLabel = "walking";
-  }
-  else
-  {
-    finalLabel = "rest";
-  }
+//   if (goingstair > PSIZE / 3)
+//   {
+//     finalLabel = "goingstair";
+//   }
+//   else if (run > PSIZE / 3)
+//   {
+//     finalLabel = "running";
+//   }
+//   else if (walk > PSIZE / 3)
+//   {
+//     finalLabel = "walking";
+//   }
+//   else
+//   {
+//     finalLabel = "rest";
+//   }
 
-  ei_printf("REST = %d, WALK = %d, RUN = %d, GOINGSTAIR = %d \n", rest, walk, run, goingstair);
+//   ei_printf("REST = %d, WALK = %d, RUN = %d, GOINGSTAIR = %d \n", rest, walk, run, goingstair);
 
-  return finalLabel;
-}
+//   return finalLabel;
+// }
 
 void blePeripheralConnectHandler(BLEDevice central)
 {
@@ -168,8 +168,16 @@ void setup()
   BLE.setAdvertisedService(bleService);
 
   // add the characteristic to the service
+  bleService.addCharacteristic(txAccXCharacteristic);
+  bleService.addCharacteristic(txAccYCharacteristic);
+  bleService.addCharacteristic(txAccZCharacteristic);
+  bleService.addCharacteristic(txGyroXCharacteristic);
+  bleService.addCharacteristic(txGyroYCharacteristic);
+  bleService.addCharacteristic(txGyroZCharacteristic);
+
   bleService.addCharacteristic(txBatCharacteristic);
   bleService.addCharacteristic(txPredCharacteristic);
+
   // bleService.addCharacteristic(rxCharacteristic);
   // add service
   BLE.addService(bleService);
@@ -206,12 +214,16 @@ void loop()
     features[ix + 4] = myIMU.readFloatGyroY() * GYRO_ANGLE_TO_RADIAN;
     features[ix + 5] = myIMU.readFloatGyroZ() * GYRO_ANGLE_TO_RADIAN;
 
-    txAccXCharacteristic.writeValue(String(features[ix], 4));
-    txAccYCharacteristic.writeValue(String(features[ix + 1], 4));
-    txAccZCharacteristic.writeValue(String(features[ix + 2], 4));
-    txGyroXCharacteristic.writeValue(String(features[ix + 3], 4));
-    txGyroYCharacteristic.writeValue(String(features[ix + 4], 4));
-    txGyroZCharacteristic.writeValue(String(features[ix + 5], 4));
+    if (central)
+    {
+      ei_printf("######  Writing IMU to BLE \n");
+      txAccXCharacteristic.writeValue(String(features[ix]));
+      txAccYCharacteristic.writeValue(String(features[ix + 1]));
+      txAccZCharacteristic.writeValue(String(features[ix + 2]));
+      txGyroXCharacteristic.writeValue(String(features[ix + 3]));
+      txGyroYCharacteristic.writeValue(String(features[ix + 4]));
+      txGyroZCharacteristic.writeValue(String(features[ix + 5]));
+    }
 
     delay(EI_CLASSIFIER_INTERVAL_MS);
   }
@@ -239,52 +251,64 @@ void loop()
       label = result.classification[ix].label;
     }
   }
-  
-  if (label == "rest")
+  global_data = label;
+  if (central)
   {
-    label = "1";
+    ei_printf("######  Writing to BLE \n");
+    // txBatCharacteristic.writeValue(String(vBat));
+    // txPredCharacteristic.writeValue(label.c_str());
+    // txPredCharacteristic.writeValue(global_data.c_str());
+    txPredCharacteristic.writeValue(global_data.c_str());
+    if (receiving == true)
+    {
+      global_data = "";
+    }
   }
-  else if (label == "walking")
-  {
-    label = "2";
-  }
-  else if (label == "running")
-  {
-    label = "3";
-  }
-  else if (label == "goingstair")
-  {
-    label = "4";
-  }
+  // if (label == "rest")
+  // {
+  //   label = "1";
+  // }
+  // else if (label == "walking")
+  // {
+  //   label = "2";
+  // }
+  // else if (label == "running")
+  // {
+  //   label = "3";
+  // }
+  // else if (label == "goingstair")
+  // {
+  //   label = "4";
+  // }
 
   ei_printf("$$$$ Detected %s with score %f \n", label.c_str(), score);
 
-  predictions[pCounter++] = label;
+  // predictions[pCounter++] = label;
 
-  if (pCounter == PSIZE)
-  {
-    pCounter = 0;
+  // if (pCounter == PSIZE)
+  // {
+  //   pCounter = 0;
 
-    String fLabel = getFinalPrediction();
-    // global_data = global_data + "," + fLabel;
-    global_data = fLabel;
+  //   String fLabel = getFinalPrediction();
+  //   // global_data = global_data + "," + fLabel;
+  //   global_data = fLabel;
 
-    ei_printf("######  Final prediction %s \n", fLabel.c_str());
+  //   ei_printf("######  Final prediction %s \n", fLabel.c_str());
 
-    ei_printf("Global data written %s\n", global_data.c_str());
+  //   ei_printf("Global data written %s\n", global_data.c_str());
 
-    if (central)
-    {
+  //   if (central)
+  //   {
 
-      ei_printf("######  Writing to BLE \n");
-      // txBatCharacteristic.writeValue(String(vBat));
-      // txPredCharacteristic.writeValue(label.c_str());
-      txPredCharacteristic.writeValue(global_data.c_str());
+  //     ei_printf("######  Writing to BLE \n");
+  //     // txBatCharacteristic.writeValue(String(vBat));
+  //     // txPredCharacteristic.writeValue(label.c_str());
+  //     // txPredCharacteristic.writeValue(global_data.c_str());
 
-      if (receiving == true)
-      {
-        global_data = "";
-      }
-    }
-  }
+  //     if (receiving == true)
+  //     {
+  //       global_data = "";
+  //     }
+  //   }
+  // }
 }
