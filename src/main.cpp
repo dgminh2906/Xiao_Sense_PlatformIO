@@ -124,6 +124,8 @@ void setup()
 
   // start advertising
   BLE.advertise();
+  BLE.setAdvertisingInterval(20);
+  BLE.setConnectionInterval(7.5, 7.5);
 
   // Initialize the IMU sensor
   if (myIMU.begin() != 0)
@@ -154,7 +156,7 @@ void loop()
     //Send IMU data
     if (central)
     {
-      ei_printf("######  Writing IMU to BLE \n");
+      // ei_printf("######  Writing IMU to BLE \n");
       txAccXCharacteristic.writeValue(String(features[i]));
       txAccYCharacteristic.writeValue(String(features[i + 1]));
       txAccZCharacteristic.writeValue(String(features[i + 2]));
@@ -194,7 +196,7 @@ void loop()
   //Send data
   if (central)
   {
-    ei_printf("######  Writing to BLE \n");
+    // ei_printf("######  Writing to BLE \n");
     txPredCharacteristic.writeValue(global_data.c_str());
     if (receiving == true)
     {
