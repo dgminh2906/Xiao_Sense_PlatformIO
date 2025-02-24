@@ -20,6 +20,9 @@
 #define ACCELERATION_DUE_TO_GRAVITY 9.81f
 #define GYRO_ANGLE_TO_RADIAN 3.141f / 180.0f
 
+#define CLEAR_STEP true
+#define NOT_CLEAR_STEP false
+
 // Create a instance of class LSM6DS3
 LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 
@@ -37,9 +40,11 @@ BLEStringCharacteristic txPredCharacteristic(TX_PRED_CHAR_UUID, BLERead | BLENot
 BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
 
 static bool receiving = false;
-
 float features[EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE] = {0};
-String global_data;
+String motion = "rest";
+String pre_motion = "rest";
+uint8_t dataByte = 0;
+uint16_t stepCount = 0;
 
 int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
 {
@@ -74,24 +79,76 @@ void rxCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic
   if (value == "r")
   {
     receiving = true;
-    global_data = "";
+    motion = "";
   }
 }
 
-void setup()
+void CollectData()
 {
-  // Serial for debugging
-  Serial.begin(9600);
+  for (size_t i = 0; i < EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE; i += 6)
+  {
+    features[i] = myIMU.readFloatAccelX() * ACCELERATION_DUE_TO_GRAVITY;
+    features[i + 1] = myIMU.readFloatAccelY() * ACCELERATION_DUE_TO_GRAVITY;
+    features[i + 2] = myIMU.readFloatAccelZ() * ACCELERATION_DUE_TO_GRAVITY;
+    features[i + 3] = myIMU.readFloatGyroX() * GYRO_ANGLE_TO_RADIAN;
+    features[i + 4] = myIMU.readFloatGyroY() * GYRO_ANGLE_TO_RADIAN;
+    features[i + 5] = myIMU.readFloatGyroZ() * GYRO_ANGLE_TO_RADIAN;
 
-  // set LED pin to output mode
-  pinMode(P0_14, OUTPUT);
-  digitalWrite(P0_14, LOW);
-  pinMode(LEDB, OUTPUT);
-  pinMode(LEDR, OUTPUT);
-  digitalWrite(LEDR, LOW);
-  digitalWrite(LEDB, HIGH);
+    // // Send IMU data
+    // if (central)
+    // {
+    //   // ei_printf("######  Writing IMU to BLE \n");
+    //   txAccXCharacteristic.writeValue(String(features[i]));
+    //   txAccYCharacteristic.writeValue(String(features[i + 1]));
+    //   txAccZCharacteristic.writeValue(String(features[i + 2]));
+    //   txGyroXCharacteristic.writeValue(String(features[i + 3]));
+    //   txGyroYCharacteristic.writeValue(String(features[i + 4]));
+    //   txGyroZCharacteristic.writeValue(String(features[i + 5]));
+    // }
 
-  // Initialize BLE
+    delay(EI_CLASSIFIER_INTERVAL_MS);
+  }
+}
+
+void RunDetection()
+{
+  // Run the classifier
+  ei_impulse_result_t result = {0};
+
+  signal_t features_signal;
+  features_signal.total_length = sizeof(features) / sizeof(features[0]);
+  features_signal.get_data = &raw_feature_get_data;
+
+  // Invoke the impulse
+  EI_IMPULSE_ERROR res = run_classifier(&features_signal, &result, false /* debug */);
+  if (res != EI_IMPULSE_OK)
+    return;
+
+  float score = 0;
+  String label = "";
+  // Get result after classifier
+  for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
+  {
+    if (result.classification[ix].value > score)
+    {
+      score = result.classification[ix].value;
+      label = result.classification[ix].label;
+    }
+  }
+  // motion = motion + " " + label;
+  if (score > 0.7)
+  {
+    motion = label;
+    pre_motion = motion;
+  }
+  else
+  {
+    motion = pre_motion;
+  }
+}
+
+void setupBLE()
+{
   if (!BLE.begin())
   {
     Serial.println("Starting BLE failed!");
@@ -126,8 +183,53 @@ void setup()
   BLE.advertise();
   BLE.setAdvertisingInterval(20);
   BLE.setConnectionInterval(7.5, 7.5);
+}
 
-  // Initialize the IMU sensor
+void StepCount()
+{
+  myIMU.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
+  stepCount = (dataByte << 8) & 0xFFFF;
+
+  myIMU.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
+  stepCount |= dataByte;
+}
+
+int config_pedometer(bool clearStep)
+{
+  uint8_t errorAccumulator = 0;
+  uint8_t dataToWrite = 0; // Temporary variable
+
+  // Setup the accelerometer******************************
+  dataToWrite = 0;
+
+  //  dataToWrite |= LSM6DS3_ACC_GYRO_BW_XL_200Hz;
+  dataToWrite |= LSM6DS3_ACC_GYRO_FS_XL_2g;
+  dataToWrite |= LSM6DS3_ACC_GYRO_ODR_XL_26Hz;
+
+  // Step 1: Configure ODR-26Hz and FS-2g
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, dataToWrite);
+
+  // Step 2: Set bit Zen_G, Yen_G, Xen_G, FUNC_EN, PEDO_RST_STEP(1 or 0)
+  if (clearStep)
+  {
+    errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3E);
+  }
+  else
+  {
+    errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL10_C, 0x3C);
+  }
+
+  // Step 3:  Enable pedometer algorithm
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x40);
+
+  // Step 4: Step Detector interrupt driven to INT1 pin, set bit INT1_FIFO_OVR
+  errorAccumulator += myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT1_CTRL, 0x10);
+
+  return errorAccumulator;
+}
+
+void setupIMU()
+{
   if (myIMU.begin() != 0)
   {
     Serial.println("Device error");
@@ -136,72 +238,48 @@ void setup()
   else
   {
     Serial.println("Device OK!");
+    if (0 != config_pedometer(NOT_CLEAR_STEP))
+    {
+      Serial.println("Configure pedometer fail!");
+    }
+    Serial.println("Success to Configure pedometer!");
   }
+}
+
+void setup()
+{
+  // Serial for debugging
+  Serial.begin(9600);
+
+  // set LED pin to output mode
+  pinMode(P0_14, OUTPUT);
+  digitalWrite(P0_14, LOW);
+  pinMode(LEDB, OUTPUT);
+  pinMode(LEDR, OUTPUT);
+  digitalWrite(LEDR, LOW);
+  digitalWrite(LEDB, HIGH);
+
+  // Initialize BLE
+  setupBLE();
+  // Initialize the IMU sensor
+  setupIMU();
 }
 
 void loop()
 {
   BLEDevice central = BLE.central();
-
-  // Collect data
-  for (size_t i = 0; i < EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE; i += 6)
-  {
-    features[i] = myIMU.readFloatAccelX() * ACCELERATION_DUE_TO_GRAVITY;
-    features[i + 1] = myIMU.readFloatAccelY() * ACCELERATION_DUE_TO_GRAVITY;
-    features[i + 2] = myIMU.readFloatAccelZ() * ACCELERATION_DUE_TO_GRAVITY;
-    features[i + 3] = myIMU.readFloatGyroX() * GYRO_ANGLE_TO_RADIAN;
-    features[i + 4] = myIMU.readFloatGyroY() * GYRO_ANGLE_TO_RADIAN;
-    features[i + 5] = myIMU.readFloatGyroZ() * GYRO_ANGLE_TO_RADIAN;
-
-    //Send IMU data
-    if (central)
-    {
-      // ei_printf("######  Writing IMU to BLE \n");
-      txAccXCharacteristic.writeValue(String(features[i]));
-      txAccYCharacteristic.writeValue(String(features[i + 1]));
-      txAccZCharacteristic.writeValue(String(features[i + 2]));
-      txGyroXCharacteristic.writeValue(String(features[i + 3]));
-      txGyroYCharacteristic.writeValue(String(features[i + 4]));
-      txGyroZCharacteristic.writeValue(String(features[i + 5]));
-    }
-
-    delay(EI_CLASSIFIER_INTERVAL_MS);
-  }
-
-  // Run the classifier
-  ei_impulse_result_t result = {0};
-
-  signal_t features_signal;
-  features_signal.total_length = sizeof(features) / sizeof(features[0]);
-  features_signal.get_data = &raw_feature_get_data;
-
-  // Invoke the impulse
-  EI_IMPULSE_ERROR res = run_classifier(&features_signal, &result, false /* debug */);
-  if (res != EI_IMPULSE_OK)
-    return;
-
-  float score = 0;
-  String label = "";
-  // Get result after classifier
-  for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++)
-  {
-    if (result.classification[ix].value > score)
-    {
-      score = result.classification[ix].value;
-      label = result.classification[ix].label;
-    }
-  }
-  // global_data = global_data + " " + label;
-  global_data = label;
-  //Send data
+  CollectData();
+  RunDetection();
+  StepCount();
+  Serial.println(motion);
+  Serial.println(stepCount);
+  // Send data
   if (central)
   {
-    // ei_printf("######  Writing to BLE \n");
-    txPredCharacteristic.writeValue(global_data.c_str());
+    txPredCharacteristic.writeValue(motion.c_str());
     if (receiving == true)
     {
-      global_data = "";
+      motion = "";
     }
   }
-  ei_printf("$$$$ Detected %s with score %f \n", global_data.c_str(), score);
 }
