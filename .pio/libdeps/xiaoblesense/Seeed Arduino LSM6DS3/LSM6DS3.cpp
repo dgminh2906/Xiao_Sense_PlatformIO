@@ -32,9 +32,14 @@
 #include "Wire.h"
 #include "SPI.h"
 
-#ifdef TARGET_SEEED_XIAO_NRF52840_SENSE
+#if defined(TARGET_SEEED_XIAO_NRF52840_SENSE)
 #define Wire Wire1
 #endif
+#if defined(ARDUINO_XIAO_MG24)
+#define Wire Wire1
+#define PIN_LSM6DS3TR_C_POWER PD5
+#endif
+
 //****************************************************************************//
 //
 //  LSM6DS3Core functions.
@@ -67,11 +72,13 @@ status_t LSM6DS3Core::beginCore(void) {
     status_t returnError = IMU_SUCCESS;
 #ifdef PIN_LSM6DS3TR_C_POWER
 	pinMode(PIN_LSM6DS3TR_C_POWER, OUTPUT);
+    #if defined(TARGET_SEEED_XIAO_NRF52840_SENSE)
     NRF_P1->PIN_CNF[8] = ((uint32_t)NRF_GPIO_PIN_DIR_OUTPUT << GPIO_PIN_CNF_DIR_Pos)
                               | ((uint32_t)NRF_GPIO_PIN_INPUT_DISCONNECT << GPIO_PIN_CNF_INPUT_Pos)
                               | ((uint32_t)NRF_GPIO_PIN_NOPULL << GPIO_PIN_CNF_PULL_Pos)
                               | ((uint32_t)NRF_GPIO_PIN_H0H1 << GPIO_PIN_CNF_DRIVE_Pos)
                               | ((uint32_t)NRF_GPIO_PIN_NOSENSE << GPIO_PIN_CNF_SENSE_Pos);
+    #endif
 	digitalWrite(PIN_LSM6DS3TR_C_POWER, HIGH);
 	delay(10);
 #endif
@@ -86,7 +93,9 @@ status_t LSM6DS3Core::beginCore(void) {
             // start the SPI library:
             SPI.begin();
             // Maximum SPI frequency is 10MHz, could divide by 2 here:
+            #ifndef ARDUINO_XIAO_MG24
             SPI.setClockDivider(SPI_CLOCK_DIV4);
+            #endif 
             // Data is read and written MSb first.
 #ifdef ESP32
             SPI.setBitOrder(SPI_MSBFIRST);
@@ -157,8 +166,9 @@ status_t LSM6DS3Core::readRegisterRegion(uint8_t* outputPointer, uint8_t offset,
     //define pointer that will point to the external space
     uint8_t i = 0;
     uint8_t c = 0;
+#ifndef TARGET_SEEED_XIAO_NRF52840_SENSE 
     uint8_t tempFFCounter = 0;
-
+#endif
     switch (commInterface) {
 
         case I2C_MODE:
@@ -221,7 +231,7 @@ status_t LSM6DS3Core::readRegisterRegion(uint8_t* outputPointer, uint8_t offset,
 //****************************************************************************//
 status_t LSM6DS3Core::readRegister(uint8_t* outputPointer, uint8_t offset) {
     //Return value
-    uint8_t result;
+    uint8_t result = 0;
     uint8_t numBytes = 1;
     status_t returnError = IMU_SUCCESS;
 
@@ -275,7 +285,7 @@ status_t LSM6DS3Core::readRegister(uint8_t* outputPointer, uint8_t offset) {
 //
 //****************************************************************************//
 status_t LSM6DS3Core::readRegisterInt16(int16_t* outputPointer, uint8_t offset) {
-    uint8_t myBuffer[2];
+    uint8_t myBuffer[2] = {0, 0};
     status_t returnError = readRegisterRegion(myBuffer, offset, 2);  //Does memory transfer
     int16_t output = (int16_t)myBuffer[0] | int16_t(myBuffer[1] << 8);
 

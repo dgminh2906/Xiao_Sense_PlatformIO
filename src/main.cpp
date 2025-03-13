@@ -2,19 +2,14 @@
 #include "LSM6DS3.h"
 #include "Wire.h"
 #include "Motion-detection-with-XIAO-Sense_inferencing.h"
+// #include "Adafruit_SPIFlash.h"
+// #include <SPI.h>
+#include "nrf52840.h"
 
 #define BLENAME "XIAO_SENSE_ACTIVITY_TRACKER"
 #define SERVICE_UUID "4D7D1101-EE27-40B2-836C-17505C1044D7"
 
-#define TX_ACC_X_UUID "4D7D1102-EE27-40B2-836C-17505C1044D7"
-#define TX_ACC_Y_UUID "4D7D1103-EE27-40B2-836C-17505C1044D7"
-#define TX_ACC_Z_UUID "4D7D1104-EE27-40B2-836C-17505C1044D7"
-#define TX_GYRO_X_UUID "4D7D1105-EE27-40B2-836C-17505C1044D7"
-#define TX_GYRO_Y_UUID "4D7D1106-EE27-40B2-836C-17505C1044D7"
-#define TX_GYRO_Z_UUID "4D7D1107-EE27-40B2-836C-17505C1044D7"
-
 #define TX_PRED_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
-// #define TX_BAT_CHAR_UUID "4D7D1109-EE27-40B2-836C-17505C1044D7"
 #define RX_CHAR_UUID "4D7D1110-EE27-40B2-836C-17505C1044D7"
 
 #define ACCELERATION_DUE_TO_GRAVITY 9.81f
@@ -23,28 +18,23 @@
 #define CLEAR_STEP true
 #define NOT_CLEAR_STEP false
 
+// Adafruit_FlashTransport_QSPI flashTransport;
+// Adafruit_SPIFlash flash(&flashTransport);
+
 // Create a instance of class LSM6DS3
 LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 
 BLEService bleService(SERVICE_UUID); // Bluetooth Low Energy LED Service
 
-BLEStringCharacteristic txAccXCharacteristic(TX_ACC_X_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txAccYCharacteristic(TX_ACC_Y_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txAccZCharacteristic(TX_ACC_Z_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txGyroXCharacteristic(TX_GYRO_X_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txGyroYCharacteristic(TX_GYRO_Y_UUID, BLERead | BLENotify, 1024);
-BLEStringCharacteristic txGyroZCharacteristic(TX_GYRO_Z_UUID, BLERead | BLENotify, 1024);
-
 BLEStringCharacteristic txPredCharacteristic(TX_PRED_CHAR_UUID, BLERead | BLENotify, 1024);
-// BLEStringCharacteristic txBatCharacteristic(TX_BAT_CHAR_UUID, BLERead | BLENotify, 1024);
 BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
 
 static bool receiving = false;
 float features[EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE] = {0};
-String motion = "rest";
-String pre_motion = "rest";
+String motion ="idle";
+String pre_motion = "idle";
 uint8_t dataByte = 0;
-uint16_t stepCount = 0;
+uint16_t step = 0;
 
 int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
 {
@@ -83,7 +73,7 @@ void rxCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic
   }
 }
 
-void CollectData()
+void collect_data()
 {
   for (size_t i = 0; i < EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE; i += 6)
   {
@@ -110,7 +100,7 @@ void CollectData()
   }
 }
 
-void RunDetection()
+void run_detection()
 {
   // Run the classifier
   ei_impulse_result_t result = {0};
@@ -147,7 +137,7 @@ void RunDetection()
   }
 }
 
-void setupBLE()
+void set_up_BLE()
 {
   if (!BLE.begin())
   {
@@ -160,17 +150,8 @@ void setupBLE()
   BLE.setLocalName(BLENAME);
   BLE.setAdvertisedService(bleService);
 
-  // add the characteristic to the service
-  bleService.addCharacteristic(txAccXCharacteristic);
-  bleService.addCharacteristic(txAccYCharacteristic);
-  bleService.addCharacteristic(txAccZCharacteristic);
-  bleService.addCharacteristic(txGyroXCharacteristic);
-  bleService.addCharacteristic(txGyroYCharacteristic);
-  bleService.addCharacteristic(txGyroZCharacteristic);
-
   bleService.addCharacteristic(txPredCharacteristic);
-  // bleService.addCharacteristic(txBatCharacteristic);
-  // bleService.addCharacteristic(rxCharacteristic);
+  bleService.addCharacteristic(rxCharacteristic);
 
   // add service
   BLE.addService(bleService);
@@ -185,13 +166,13 @@ void setupBLE()
   BLE.setConnectionInterval(7.5, 7.5);
 }
 
-void StepCount()
+void step_count()
 {
   myIMU.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_H);
-  stepCount = (dataByte << 8) & 0xFFFF;
+  step = (dataByte << 8) & 0xFFFF;
 
   myIMU.readRegister(&dataByte, LSM6DS3_ACC_GYRO_STEP_COUNTER_L);
-  stepCount |= dataByte;
+  step |= dataByte;
 }
 
 int config_pedometer(bool clearStep)
@@ -228,7 +209,7 @@ int config_pedometer(bool clearStep)
   return errorAccumulator;
 }
 
-void setupIMU()
+void set_up_IMU()
 {
   if (myIMU.begin() != 0)
   {
@@ -260,20 +241,29 @@ void setup()
   digitalWrite(LEDB, HIGH);
 
   // Initialize BLE
-  setupBLE();
+  set_up_BLE();
   // Initialize the IMU sensor
-  setupIMU();
+  set_up_IMU();
+
+  // // Initialize QSPI flash
+  // if (!flash.begin())
+  // {
+  //   Serial.println("Failed to initialize QSPI flash!");
+  //   while (1)
+  //     ;
+  // }
+  // Serial.println("QSPI Flash initialized successfully!");
 }
 
 void loop()
 {
   BLEDevice central = BLE.central();
-  CollectData();
-  RunDetection();
-  StepCount();
+  collect_data();
+  run_detection();
+  step_count();
   Serial.println(motion);
-  Serial.println(stepCount);
-  // Send data
+  Serial.println(step);
+  Serial.println(motion);
   if (central)
   {
     txPredCharacteristic.writeValue(motion.c_str());
