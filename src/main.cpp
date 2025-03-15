@@ -35,6 +35,12 @@
 #define MAX_MOTION_ENTRIES 100
 #define MAX_STRING_LENGTH 128
 
+#define LED_RED_PORT 0
+#define LED_RED_PIN 26
+#define IMU_INT1_PORT 0
+#define IMU_INT1_PIN 11
+uint32_t lsm6ds3_interrupt_count = 0;
+
 // Create a instance of class LSM6DS3
 LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 
@@ -148,9 +154,6 @@ void rxCharacteristicWritten(BLEDevice central, BLECharacteristic characteristic
   if (value == "r")
   {
     receiving = true;
-
-    // Clear motion data
-    clearMotionData();
   }
 }
 
@@ -277,19 +280,28 @@ int config_pedometer(bool clearStep)
 
 void set_up_IMU()
 {
+  /* Disable gyro and temp on IMU sensor */
+  myIMU.settings.gyroEnabled = 0;
+  myIMU.settings.tempEnabled = 0;
+
   if (myIMU.begin() != 0)
   {
-    Serial.println("Device error");
-    digitalWrite(LEDR, LOW);
+    NRF_GPIOTE->CONFIG[0] = 0x3 | (LED_RED_PIN << 8) | (LED_RED_PORT << 13);
   }
   else
   {
-    Serial.println("Device OK!");
-    if (0 != config_pedometer(NOT_CLEAR_STEP))
-    {
-      Serial.println("Configure pedometer fail!");
-    }
-    Serial.println("Success to Configure pedometer!");
+    myIMU.writeRegister(0x12, 0x04); // CTRL3_C: Active Low
+    myIMU.writeRegister(0x0D, 0x01); // INT1_CTRL: Enable interrupt on INT1
+
+    // /* Config INPUT falling edge for IMU_INT1 */
+    NRF_GPIOTE->CONFIG[1] = 0x1 | (IMU_INT1_PIN << 8) | (IMU_INT1_PORT << 13) | (0x1 << 16);
+    // /* Enable INTERRUPT for IMU_INT1 */
+    NRF_GPIOTE->INTENSET = 1 << 1;
+
+    NVIC_SetPriority(GPIOTE_IRQn, 15); // Lowes priority
+    NVIC_ClearPendingIRQ(GPIOTE_IRQn);
+    NVIC_EnableIRQ(GPIOTE_IRQn);
+    config_pedometer(NOT_CLEAR_STEP);
   }
 }
 
@@ -393,6 +405,15 @@ static void QSPI_Erase(uint32_t AStartAddress)
     }
   }
   nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_64KB, AStartAddress);
+}
+
+void GPIOTE_IRQHandler()
+{
+  if (NRF_GPIOTE->EVENTS_IN[1])
+  {
+    NRF_GPIOTE->EVENTS_IN[1] = 0;
+    lsm6ds3_interrupt_count++;
+  }
 }
 
 void setup()
