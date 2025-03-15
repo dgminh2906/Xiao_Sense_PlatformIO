@@ -446,7 +446,9 @@ void loop()
     // Send the latest motion data over BLE
     if (motionCount > 0)
     {
-      txPredCharacteristic.writeValue(motionData[motionCount - 1]);
+      for (int i = 0; i < motionCount; i++){
+        txPredCharacteristic.writeValue(motionData[i]);
+      }
     }
 
     if (receiving == true)
