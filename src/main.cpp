@@ -9,6 +9,12 @@
 // Library for using QSPI
 #include "nrfx_qspi.h"
 #include "app_util_platform.h"
+#include "nrf_log.h"
+#include "nrf_log_ctrl.h"
+#include "nrf_log_default_backends.h"
+#include "sdk_config.h"
+#include "nrf_delay.h"
+#include "avr/interrupt.h"
 
 // BLE Setting
 #define BLENAME "XIAO_SENSE_ACTIVITY_TRACKER"
@@ -48,6 +54,7 @@ static uint32_t *QSPI_Status_Ptr = (uint32_t *)0x40029604; // Setup for the SEEE
 static nrfx_qspi_config_t QSPIConfig;
 static nrf_qspi_cinstr_conf_t QSPICinstr_cfg;
 static const uint32_t MemToUse = 64 * 1024; // Alter this to create larger read writes, 64Kb is the size of the Erase
+static bool Debug_On = true;
 static bool QSPIWait = false;
 
 // Variable for normal mode
@@ -293,6 +300,43 @@ void set_up_IMU()
   }
 }
 
+static void qspi_handler(nrfx_qspi_evt_t event, void *p_context)
+{
+  // UNUSED_PARAMETER(p_context);
+  // Serial.println("QSPI Interrupt");
+  // if (event == NRFX_QSPI_EVENT_DONE) {
+  //   QSPI_HasFinished = true;
+  // }
+}
+
+static void QSPI_Status(char ASender[])
+{ // Prints the QSPI Status
+  Serial.print("(");
+  Serial.print(ASender);
+  Serial.print(") QSPI is busy/idle ... Result = ");
+  Serial.println(nrfx_qspi_mem_busy_check() & 8);
+  Serial.print("(");
+  Serial.print(ASender);
+  Serial.print(") QSPI Status flag = 0x");
+  Serial.print(NRF_QSPI->STATUS, HEX);
+  Serial.print(" (from NRF_QSPI) or 0x");
+  Serial.print(*QSPI_Status_Ptr, HEX);
+  Serial.println(" (from *QSPI_Status_Ptr)");
+}
+
+static void QSPI_PrintData(uint16_t *AnAddress, uint32_t AnAmount)
+{
+  uint32_t i;
+
+  Serial.print("Data :");
+  for (i = 0; i < AnAmount; i++)
+  {
+    Serial.print(" 0x");
+    Serial.print(*(AnAddress + i), HEX);
+  }
+  Serial.println("");
+}
+
 static nrfx_err_t QSPI_IsReady()
 {
   if (((*QSPI_Status_Ptr & 8) == 8) && (*QSPI_Status_Ptr & 0x01000000) == 0)
@@ -309,14 +353,23 @@ static nrfx_err_t QSPI_WaitForReady()
 {
   while (QSPI_IsReady() == NRFX_ERROR_BUSY)
   {
-    // Just wait until ready
+    if (Debug_On)
+    {
+      Serial.print("*QSPI_Status_Ptr & 8 = ");
+      Serial.print(*QSPI_Status_Ptr & 8);
+      Serial.print(", *QSPI_Status_Ptr & 0x01000000 = 0x");
+      Serial.println(*QSPI_Status_Ptr & 0x01000000, HEX);
+      QSPI_Status("QSPI_WaitForReady");
+    }
   }
   return NRFX_SUCCESS;
 }
 
 static void QSIP_Configure_Memory()
 {
+  // uint8_t  temporary = 0x40;
   uint8_t temporary[] = {0x00, 0x02};
+  uint32_t Error_Code;
 
   QSPICinstr_cfg = {
       .opcode = QSPI_STD_CMD_RSTEN,
@@ -326,21 +379,50 @@ static void QSIP_Configure_Memory()
       .wipwait = QSPIWait,
       .wren = true};
   QSPI_WaitForReady();
-  nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL); // Send reset enable
-
-  QSPICinstr_cfg.opcode = QSPI_STD_CMD_RST;
-  QSPI_WaitForReady();
-  nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL); // Send reset command
-
-  QSPICinstr_cfg.opcode = QSPI_STD_CMD_WRSR;
-  QSPICinstr_cfg.length = NRF_QSPI_CINSTR_LEN_3B;
-  QSPI_WaitForReady();
-  nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, &temporary, NULL); // Switch to qspi mode
+  if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL) != NRFX_SUCCESS)
+  { // Send reset enable
+    if (Debug_On)
+    {
+      Serial.println("(QSIP_Configure_Memory) QSPI 'Send reset enable' failed!");
+    }
+  }
+  else
+  {
+    QSPICinstr_cfg.opcode = QSPI_STD_CMD_RST;
+    QSPI_WaitForReady();
+    if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL) != NRFX_SUCCESS)
+    { // Send reset command
+      if (Debug_On)
+      {
+        Serial.println("(QSIP_Configure_Memory) QSPI Reset failed!");
+      }
+    }
+    else
+    {
+      QSPICinstr_cfg.opcode = QSPI_STD_CMD_WRSR;
+      QSPICinstr_cfg.length = NRF_QSPI_CINSTR_LEN_3B;
+      QSPI_WaitForReady();
+      if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, &temporary, NULL) != NRFX_SUCCESS)
+      { // Switch to qspi mode
+        if (Debug_On)
+        {
+          Serial.println("(QSIP_Configure_Memory) QSPI failed to switch to QSPI mode!");
+        }
+      }
+      else
+      {
+        QSPI_Status("QSIP_Configure_Memory");
+      }
+    }
+  }
 }
 
 static nrfx_err_t QSPI_Initialise()
 { // Initialises the QSPI and NRF LOG
   uint32_t Error_Code;
+
+  NRF_LOG_INIT(NULL); // Initialise the NRF Log
+  NRF_LOG_DEFAULT_BACKENDS_INIT();
   // QSPI Config
   QSPIConfig.xip_offset = NRFX_QSPI_CONFIG_XIP_OFFSET;
   QSPIConfig.pins = {
@@ -354,45 +436,106 @@ static nrfx_err_t QSPI_Initialise()
   };
   QSPIConfig.irq_priority = (uint8_t)NRFX_QSPI_CONFIG_IRQ_PRIORITY;
   QSPIConfig.prot_if = {
+      // .readoc     = (nrf_qspi_readoc_t)NRFX_QSPI_CONFIG_READOC,
       .readoc = (nrf_qspi_readoc_t)NRF_QSPI_READOC_READ4O,
+      // .writeoc    = (nrf_qspi_writeoc_t)NRFX_QSPI_CONFIG_WRITEOC,
       .writeoc = (nrf_qspi_writeoc_t)NRF_QSPI_WRITEOC_PP4O,
       .addrmode = (nrf_qspi_addrmode_t)NRFX_QSPI_CONFIG_ADDRMODE,
       .dpmconfig = false,
   };
-  QSPIConfig.phy_if.sck_freq = (nrf_qspi_frequency_t)NRF_QSPI_FREQ_32MDIV1;
+  QSPIConfig.phy_if.sck_freq = (nrf_qspi_frequency_t)NRF_QSPI_FREQ_32MDIV1; // I had to do it this way as it complained about nrf_qspi_phy_conf_t not being visible
+  // QSPIConfig.phy_if.sck_freq   = (nrf_qspi_frequency_t)NRFX_QSPI_CONFIG_FREQUENCY;
   QSPIConfig.phy_if.spi_mode = (nrf_qspi_spi_mode_t)NRFX_QSPI_CONFIG_MODE;
   QSPIConfig.phy_if.dpmen = false;
   // QSPI Config Complete
   // Setup QSPI to allow for DPM but with it turned off
   QSPIConfig.prot_if.dpmconfig = true;
-  NRF_QSPI->DPMDUR = (QSPI_DPM_ENTER << 16) | QSPI_DPM_EXIT; // Sets the Deep power-down mode timer
+  NRF_QSPI->DPMDUR = (QSPI_DPM_ENTER << 16) | QSPI_DPM_EXIT; // Found this on the Nordic Q&A pages, Sets the Deep power-down mode timer
   Error_Code = 1;
   while (Error_Code != 0)
   {
     Error_Code = nrfx_qspi_init(&QSPIConfig, NULL, NULL);
+    if (Error_Code != NRFX_SUCCESS)
+    {
+      if (Debug_On)
+      {
+        Serial.print("(QSPI_Initialise) nrfx_qspi_init returned : ");
+        Serial.println(Error_Code);
+      }
+    }
+    else
+    {
+      if (Debug_On)
+      {
+        Serial.println("(QSPI_Initialise) nrfx_qspi_init successful");
+      }
+    }
   }
+  QSPI_Status("QSPI_Initialise (Before QSIP_Configure_Memory)");
   QSIP_Configure_Memory();
+  if (Debug_On)
+  {
+    Serial.println("(QSPI_Initialise) Wait for QSPI to be ready ...");
+  }
   NRF_QSPI->TASKS_ACTIVATE = 1;
   QSPI_WaitForReady();
+  if (Debug_On)
+  {
+    Serial.println("(QSPI_Initialise) QSPI is ready");
+  }
   return QSPI_IsReady();
 }
 
 static void QSPI_Erase(uint32_t AStartAddress)
 {
+  uint32_t TimeTaken;
   bool QSPIReady = false;
+  bool AlreadyPrinted = false;
 
+  if (Debug_On)
+  {
+    Serial.println("(QSPI_Erase) Erasing memory");
+  }
   while (!QSPIReady)
   {
     if (QSPI_IsReady() != NRFX_SUCCESS)
     {
-      // Just wait
+      if (!AlreadyPrinted)
+      {
+        QSPI_Status("QSPI_Erase (Waiting)");
+        AlreadyPrinted = true;
+      }
     }
     else
     {
       QSPIReady = true;
+      QSPI_Status("QSPI_Erase (Waiting Loop Breakout)");
     }
   }
-  nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_64KB, AStartAddress);
+  if (Debug_On)
+  {
+    QSPI_Status("QSPI_Erase (Finished Waiting)");
+    TimeTaken = millis();
+  }
+  if (nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_64KB, AStartAddress) != NRFX_SUCCESS)
+  {
+    if (Debug_On)
+    {
+      Serial.print("(QSPI_Initialise_Page) QSPI Address 0x");
+      Serial.print(AStartAddress, HEX);
+      Serial.println(" failed to erase!");
+    }
+  }
+  else
+  {
+    if (Debug_On)
+    {
+      TimeTaken = millis() - TimeTaken;
+      Serial.print("(QSPI_Initialise_Page) QSPI took ");
+      Serial.print(TimeTaken);
+      Serial.println("ms to erase a 64Kb page");
+    }
+  }
 }
 
 void setup()
@@ -416,7 +559,21 @@ void setup()
   // Initialize the IMU sensor
   set_up_IMU();
 
-  QSPI_Initialise();
+  if (QSPI_Initialise() != NRFX_SUCCESS)
+  {
+    if (Debug_On)
+    {
+      Serial.println("(Setup) QSPI Memory failed to start!");
+    }
+  }
+  else
+  {
+    if (Debug_On)
+    {
+      Serial.println("(Setup) QSPI initialised and ready");
+      QSPI_Status("Setup (After initialise)");
+    }
+  }
 }
 
 void loop()
@@ -446,15 +603,20 @@ void loop()
     // Send the latest motion data over BLE
     if (motionCount > 0)
     {
-      for (int i = 0; i < motionCount; i++){
+      for (int i = 0; i < motionCount; i++)
+      {
         txPredCharacteristic.writeValue(motionData[i]);
+        Serial.println(motionData[i]);
       }
     }
 
     if (receiving == true)
     {
       clearMotionData();
-      QSPI_Erase(0);
+      if (motionCount > 1)
+      {
+        QSPI_Erase(0);
+      }
     }
   }
   else
