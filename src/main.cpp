@@ -14,6 +14,7 @@
 #define BLENAME "XIAO_SENSE_ACTIVITY_TRACKER"
 #define SERVICE_UUID "4D7D1101-EE27-40B2-836C-17505C1044D7"
 #define TX_PRED_CHAR_UUID "4D7D1108-EE27-40B2-836C-17505C1044D7"
+#define TX_STEP_CHAR_UUID "4D7D1109-EE27-40B2-836C-17505C1044D7"
 #define RX_CHAR_UUID "4D7D1110-EE27-40B2-836C-17505C1044D7"
 
 // Macro for IMU data
@@ -47,6 +48,7 @@ LSM6DS3 myIMU(I2C_MODE, 0x6A); // I2C device address 0x6A
 // Initialize BLE
 BLEService bleService(SERVICE_UUID); // Bluetooth Low Energy LED Service
 BLEStringCharacteristic txPredCharacteristic(TX_PRED_CHAR_UUID, BLERead | BLENotify, 1024);
+BLEStringCharacteristic txStepCharacteristic(TX_STEP_CHAR_UUID, BLERead | BLENotify, 1024);
 BLEStringCharacteristic rxCharacteristic(RX_CHAR_UUID, BLEWrite, 1024);
 
 // Variable for QSPI
@@ -220,6 +222,7 @@ void set_up_BLE()
   BLE.setAdvertisedService(bleService);
 
   bleService.addCharacteristic(txPredCharacteristic);
+  bleService.addCharacteristic(txStepCharacteristic);
   bleService.addCharacteristic(rxCharacteristic);
 
   // add service
@@ -230,9 +233,9 @@ void set_up_BLE()
   rxCharacteristic.setEventHandler(BLEWritten, rxCharacteristicWritten);
 
   // start advertising
+  BLE.setAdvertisingInterval(160);    // 0.625mS*160=100mS
+  BLE.setConnectionInterval(6, 3200); // 1.25mS*6=7.5mS, 1.25mS*3200=4S
   BLE.advertise();
-  BLE.setAdvertisingInterval(20);
-  BLE.setConnectionInterval(7.5, 7.5);
 }
 
 void step_count()
@@ -467,7 +470,8 @@ void loop()
     // Send the latest motion data over BLE
     if (motionCount > 0)
     {
-      for (int i = 0; i < motionCount; i++){
+      for (int i = 0; i < motionCount; i++)
+      {
         txPredCharacteristic.writeValue(motionData[i]);
       }
     }
