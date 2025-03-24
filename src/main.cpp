@@ -38,8 +38,8 @@
 #define QSPI_DPM_EXIT 0x0003
 
 // Flash storage settings
-#define MAX_STRING_LENGTH   128
-#define MAX_ENTRIES         500
+#define MAX_STRING_LENGTH   32
+#define MAX_ENTRIES         2000
 #define FLASH_HEADER_SIZE   8  // 4 bytes for entry count + 4 bytes for write position
 
 typedef struct __attribute__((packed)) {
@@ -250,10 +250,6 @@ void set_up_IMU()
     Serial.println("Success to Configure pedometer!");
   }
 }
-
-static void qspi_handler(nrfx_qspi_evt_t event, void *p_context) {
-  // UNUSED_PARAMETER(p_context);
-}
  
 static void QSPI_Status(char ASender[]) { // Prints the QSPI Status
   Serial.print("(");
@@ -268,18 +264,7 @@ static void QSPI_Status(char ASender[]) { // Prints the QSPI Status
   Serial.print(*QSPI_Status_Ptr, HEX);
   Serial.println(" (from *QSPI_Status_Ptr)");
 }
- 
-static void QSPI_PrintData(uint16_t *AnAddress, uint32_t AnAmount) {
-  uint32_t i;
- 
-  Serial.print("Data :");
-  for (i = 0; i < AnAmount; i++) {
-    Serial.print(" 0x");
-    Serial.print(*(AnAddress + i), HEX);
-  }
-  Serial.println("");
-}
- 
+
 static nrfx_err_t QSPI_IsReady() {
   if (((*QSPI_Status_Ptr & 8) == 8) && (*QSPI_Status_Ptr & 0x01000000) == 0) {
     return NRFX_SUCCESS;  
@@ -489,7 +474,7 @@ static void writeStringToFlash(const char* str) {
   if (nrfx_qspi_write(flash_header, FLASH_HEADER_SIZE, 0) != NRFX_SUCCESS) {
     Serial.println("Failed to update header");
   }
- 
+
   Serial.print("Wrote string to flash: ");
   Serial.println(str);
 }
@@ -530,58 +515,17 @@ static void readAllEntries() {
       continue;
     }
     
-    // Debug raw bytes
-    Serial.print(i);
-    Serial.print(": Raw bytes: ");
-    uint8_t* bytePtr = (uint8_t*)&read_buffer[i];
-    for (int j = 0; j < 16; j++) { // Print first 16 bytes
-      Serial.print(bytePtr[j], HEX);
-      Serial.print(" ");
-    }
-    Serial.println();
-    
     // Print entry more carefully
     Serial.print(i);
-    Serial.print(": [");
-    Serial.print(read_buffer[i].timestamp);
-    Serial.print("] ");
     
     // Explicitly print each character
     for (int j = 0; j < MAX_STRING_LENGTH && read_buffer[i].data[j] != '\0'; j++) {
       Serial.write(read_buffer[i].data[j]);
     }
     Serial.println();
+    txPredCharacteristic.writeValue(read_buffer[i].data);
   }
- 
   Serial.println("End of entries");
-}
- 
-// Check if user wants to read all entries
-static void checkSerialCommand() {
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-   
-    if (command == "read") {
-      readAllEntries();
-    } else if (command == "erase") {
-      QSPI_Erase(0);
-      flash_header[0] = 0;
-      flash_header[1] = 0;
-      QSPI_WaitForReady();
-      nrfx_qspi_write(flash_header, FLASH_HEADER_SIZE, 0);
-      Serial.println("Flash erased");
-    } else if (command == "debug") {
-      // Additional debug command
-      Serial.println("Debug info:");
-      Serial.print("Total entries: ");
-      Serial.println(flash_header[0]);
-      Serial.print("Current position: ");
-      Serial.println(flash_header[1]);
-      Serial.print("LogEntry size: ");
-      Serial.println(sizeof(LogEntry));
-    }
-  }
 }
 
 void setup()
@@ -602,17 +546,13 @@ void setup()
   // Initialize the IMU sensor
   set_up_IMU();
 
-  if (QSPI_Initialise() != NRFX_SUCCESS) {
-    Serial.println("QSPI Memory failed to start!");
-    while(1);
-  }
- 
+  QSPI_Initialise();
+
   initLogStorage();
 }
 
 void loop()
 {
-  checkSerialCommand();
   BLEDevice central = BLE.central();
   collect_data();
 
