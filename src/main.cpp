@@ -38,8 +38,8 @@
 #define QSPI_DPM_EXIT 0x0003
 
 // Flash storage settings
-#define MAX_STRING_LENGTH   32
-#define MAX_ENTRIES         2000
+#define MAX_STRING_LENGTH   16
+#define MAX_ENTRIES         4000
 #define FLASH_HEADER_SIZE   8  // 4 bytes for entry count + 4 bytes for write position
 
 typedef struct __attribute__((packed)) {
