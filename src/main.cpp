@@ -38,11 +38,12 @@
 #define QSPI_DPM_EXIT 0x0003
 
 // Flash storage settings
-#define MAX_STRING_LENGTH   16
-#define MAX_ENTRIES         4000
-#define FLASH_HEADER_SIZE   8  // 4 bytes for entry count + 4 bytes for write position
+#define MAX_STRING_LENGTH 16
+#define MAX_ENTRIES 4000
+#define FLASH_HEADER_SIZE 8 // 4 bytes for entry count + 4 bytes for write position
 
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed))
+{
   uint32_t timestamp;
   char data[MAX_STRING_LENGTH];
 } LogEntry;
@@ -68,13 +69,17 @@ static bool receiving = false;
 float features[EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE] = {0};
 
 // Flash storage variables
-static uint32_t               flash_header[2] = {0};  // [0] = entry count, [1] = write position
-static LogEntry               current_entry;
-static LogEntry               read_buffer[MAX_ENTRIES];
+static uint32_t flash_header[2] = {0}; // [0] = entry count, [1] = write position
+static LogEntry current_entry;
+static LogEntry read_buffer[MAX_ENTRIES];
 
 String pre_motion = "idle";
 uint8_t dataByte = 0;
 uint16_t step = 0;
+
+#define PSIZE 20
+String predictions[PSIZE];
+int pCounter = 0;
 
 int raw_feature_get_data(size_t offset, size_t length, float *out_ptr)
 {
@@ -159,6 +164,43 @@ String run_detection()
   }
 
   return pre_motion;
+}
+
+String getFinalPrediction(){
+  int idle = 0;
+  int walking = 0;
+  int running = 0;
+  int goingstair = 0;
+
+  String finalLabel = "1";
+
+  for(int i=0; i< PSIZE; i++){
+
+    String label = predictions[i];
+
+    if(label == "idle"){
+      idle++;
+    }else if(label == "walking"){
+      walking++;
+    }else if(label == "running"){
+      running++;
+    }else if(label == "goingstair"){
+      goingstair ++;
+    }
+  }
+
+  if(goingstair > PSIZE/3){
+    finalLabel = "goingstair";
+  }else if(running > PSIZE/3){
+      finalLabel = "running";
+  }else if(walking > PSIZE/3){
+      finalLabel = "walking";      
+  }else{
+    finalLabel = "idle";
+  }
+
+return finalLabel;
+
 }
 
 void set_up_BLE()
@@ -250,8 +292,9 @@ void set_up_IMU()
     Serial.println("Success to Configure pedometer!");
   }
 }
- 
-static void QSPI_Status(char ASender[]) { // Prints the QSPI Status
+
+static void QSPI_Status(char ASender[])
+{ // Prints the QSPI Status
   Serial.print("(");
   Serial.print(ASender);
   Serial.print(") QSPI is busy/idle ... Result = ");
@@ -265,153 +308,195 @@ static void QSPI_Status(char ASender[]) { // Prints the QSPI Status
   Serial.println(" (from *QSPI_Status_Ptr)");
 }
 
-static nrfx_err_t QSPI_IsReady() {
-  if (((*QSPI_Status_Ptr & 8) == 8) && (*QSPI_Status_Ptr & 0x01000000) == 0) {
-    return NRFX_SUCCESS;  
-  } else {
-   return NRFX_ERROR_BUSY;
+static nrfx_err_t QSPI_IsReady()
+{
+  if (((*QSPI_Status_Ptr & 8) == 8) && (*QSPI_Status_Ptr & 0x01000000) == 0)
+  {
+    return NRFX_SUCCESS;
+  }
+  else
+  {
+    return NRFX_ERROR_BUSY;
   }
 }
- 
-static nrfx_err_t QSPI_WaitForReady() {
-  while (QSPI_IsReady() == NRFX_ERROR_BUSY) {
-    if (Debug_On) {
+
+static nrfx_err_t QSPI_WaitForReady()
+{
+  while (QSPI_IsReady() == NRFX_ERROR_BUSY)
+  {
+    if (Debug_On)
+    {
       Serial.print("*QSPI_Status_Ptr & 8 = ");
       Serial.print(*QSPI_Status_Ptr & 8);
       Serial.print(", *QSPI_Status_Ptr & 0x01000000 = 0x");
       Serial.println(*QSPI_Status_Ptr & 0x01000000, HEX);
       QSPI_Status("QSPI_WaitForReady");
-    }  
+    }
   }
   return NRFX_SUCCESS;
 }
 
-static void QSIP_Configure_Memory() {
-  uint8_t  temporary[] = {0x00, 0x02};
+static void QSIP_Configure_Memory()
+{
+  uint8_t temporary[] = {0x00, 0x02};
   uint32_t Error_Code;
- 
+
   QSPICinstr_cfg = {
-    .opcode    = QSPI_STD_CMD_RSTEN,
-    .length    = NRF_QSPI_CINSTR_LEN_1B,
-    .io2_level = true,
-    .io3_level = true,
-    .wipwait   = QSPIWait,
-    .wren      = true
-  };
+      .opcode = QSPI_STD_CMD_RSTEN,
+      .length = NRF_QSPI_CINSTR_LEN_1B,
+      .io2_level = true,
+      .io3_level = true,
+      .wipwait = QSPIWait,
+      .wren = true};
   QSPI_WaitForReady();
-  if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL) != NRFX_SUCCESS) { // Send reset enable
-    if (Debug_On) {
+  if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL) != NRFX_SUCCESS)
+  { // Send reset enable
+    if (Debug_On)
+    {
       Serial.println("(QSIP_Configure_Memory) QSPI 'Send reset enable' failed!");
     }
-  } else {
+  }
+  else
+  {
     QSPICinstr_cfg.opcode = QSPI_STD_CMD_RST;
     QSPI_WaitForReady();
-    if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL) != NRFX_SUCCESS) { // Send reset command
-      if (Debug_On) {
+    if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, NULL, NULL) != NRFX_SUCCESS)
+    { // Send reset command
+      if (Debug_On)
+      {
         Serial.println("(QSIP_Configure_Memory) QSPI Reset failed!");
       }
-    } else {
+    }
+    else
+    {
       QSPICinstr_cfg.opcode = QSPI_STD_CMD_WRSR;
       QSPICinstr_cfg.length = NRF_QSPI_CINSTR_LEN_3B;
       QSPI_WaitForReady();
-      if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, &temporary, NULL) != NRFX_SUCCESS) { // Switch to qspi mode
-        if (Debug_On) {
+      if (nrfx_qspi_cinstr_xfer(&QSPICinstr_cfg, &temporary, NULL) != NRFX_SUCCESS)
+      { // Switch to qspi mode
+        if (Debug_On)
+        {
           Serial.println("(QSIP_Configure_Memory) QSPI failed to switch to QSPI mode!");
         }
-      } else {
-          QSPI_Status("QSIP_Configure_Memory");
+      }
+      else
+      {
+        QSPI_Status("QSIP_Configure_Memory");
       }
     }
   }
 }
- 
-static nrfx_err_t QSPI_Initialise() { // Initialises the QSPI and NRF LOG
+
+static nrfx_err_t QSPI_Initialise()
+{ // Initialises the QSPI and NRF LOG
   uint32_t Error_Code;
- 
+
   NRF_LOG_INIT(NULL); // Initialise the NRF Log
   NRF_LOG_DEFAULT_BACKENDS_INIT();
   // QSPI Config
-  QSPIConfig.xip_offset = NRFX_QSPI_CONFIG_XIP_OFFSET;                      
-  QSPIConfig.pins = { // Setup for the SEEED XIAO BLE - nRF52840                                                    
-   .sck_pin     = 21,                                
-   .csn_pin     = 25,                                
-   .io0_pin     = 20,                                
-   .io1_pin     = 24,                                
-   .io2_pin     = 22,                                
-   .io3_pin     = 23,                                
-  };                                                                  
-  QSPIConfig.irq_priority = (uint8_t)NRFX_QSPI_CONFIG_IRQ_PRIORITY;          
-  QSPIConfig.prot_if = {                                                        
-    .readoc     = (nrf_qspi_readoc_t)NRF_QSPI_READOC_READ4O,      
-    .writeoc    = (nrf_qspi_writeoc_t)NRF_QSPI_WRITEOC_PP4O,
-    .addrmode   = (nrf_qspi_addrmode_t)NRFX_QSPI_CONFIG_ADDRMODE,  
-    .dpmconfig  = false,                                            
-  };                  
-  QSPIConfig.phy_if.sck_freq   = (nrf_qspi_frequency_t)NRF_QSPI_FREQ_32MDIV1;                                        
-  QSPIConfig.phy_if.spi_mode   = (nrf_qspi_spi_mode_t)NRFX_QSPI_CONFIG_MODE;
-  QSPIConfig.phy_if.dpmen      = false;
+  QSPIConfig.xip_offset = NRFX_QSPI_CONFIG_XIP_OFFSET;
+  QSPIConfig.pins = {
+      // Setup for the SEEED XIAO BLE - nRF52840
+      .sck_pin = 21,
+      .csn_pin = 25,
+      .io0_pin = 20,
+      .io1_pin = 24,
+      .io2_pin = 22,
+      .io3_pin = 23,
+  };
+  QSPIConfig.irq_priority = (uint8_t)NRFX_QSPI_CONFIG_IRQ_PRIORITY;
+  QSPIConfig.prot_if = {
+      .readoc = (nrf_qspi_readoc_t)NRF_QSPI_READOC_READ4O,
+      .writeoc = (nrf_qspi_writeoc_t)NRF_QSPI_WRITEOC_PP4O,
+      .addrmode = (nrf_qspi_addrmode_t)NRFX_QSPI_CONFIG_ADDRMODE,
+      .dpmconfig = false,
+  };
+  QSPIConfig.phy_if.sck_freq = (nrf_qspi_frequency_t)NRF_QSPI_FREQ_32MDIV1;
+  QSPIConfig.phy_if.spi_mode = (nrf_qspi_spi_mode_t)NRFX_QSPI_CONFIG_MODE;
+  QSPIConfig.phy_if.dpmen = false;
   // QSPI Config Complete
   // Setup QSPI to allow for DPM but with it turned off
   QSPIConfig.prot_if.dpmconfig = true;
   NRF_QSPI->DPMDUR = (QSPI_DPM_ENTER << 16) | QSPI_DPM_EXIT; // Found this on the Nordic Q&A pages, Sets the Deep power-down mode timer
   Error_Code = 1;
-  while (Error_Code != 0) {
+  while (Error_Code != 0)
+  {
     Error_Code = nrfx_qspi_init(&QSPIConfig, NULL, NULL);
-    if (Error_Code != NRFX_SUCCESS) {
-      if (Debug_On) {
+    if (Error_Code != NRFX_SUCCESS)
+    {
+      if (Debug_On)
+      {
         Serial.print("(QSPI_Initialise) nrfx_qspi_init returned : ");
         Serial.println(Error_Code);
       }
-    } else {
-      if (Debug_On) {
+    }
+    else
+    {
+      if (Debug_On)
+      {
         Serial.println("(QSPI_Initialise) nrfx_qspi_init successful");
       }
     }
   }
   QSPI_Status("QSPI_Initialise (Before QSIP_Configure_Memory)");
   QSIP_Configure_Memory();
-  if (Debug_On) {
+  if (Debug_On)
+  {
     Serial.println("(QSPI_Initialise) Wait for QSPI to be ready ...");
   }
   NRF_QSPI->TASKS_ACTIVATE = 1;
   QSPI_WaitForReady();
-  if (Debug_On) {
+  if (Debug_On)
+  {
     Serial.println("(QSPI_Initialise) QSPI is ready");
   }
   return QSPI_IsReady();
 }
- 
-static void QSPI_Erase(uint32_t AStartAddress) {
-  uint32_t   TimeTaken;
-  bool       QSPIReady = false;
-  bool       AlreadyPrinted = false;
- 
-  if (Debug_On) {
+
+static void QSPI_Erase(uint32_t AStartAddress)
+{
+  uint32_t TimeTaken;
+  bool QSPIReady = false;
+  bool AlreadyPrinted = false;
+
+  if (Debug_On)
+  {
     Serial.println("(QSPI_Erase) Erasing memory");
   }
-  while (!QSPIReady) {
-    if (QSPI_IsReady() != NRFX_SUCCESS) {
-      if (!AlreadyPrinted) {
+  while (!QSPIReady)
+  {
+    if (QSPI_IsReady() != NRFX_SUCCESS)
+    {
+      if (!AlreadyPrinted)
+      {
         QSPI_Status("QSPI_Erase (Waiting)");
         AlreadyPrinted = true;
       }
-    } else {
+    }
+    else
+    {
       QSPIReady = true;
       QSPI_Status("QSPI_Erase (Waiting Loop Breakout)");
     }
   }
-  if (Debug_On) {
+  if (Debug_On)
+  {
     QSPI_Status("QSPI_Erase (Finished Waiting)");
     TimeTaken = millis();
   }
-  if (nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_64KB, AStartAddress) != NRFX_SUCCESS) {
-    if (Debug_On) {
+  if (nrfx_qspi_erase(NRF_QSPI_ERASE_LEN_64KB, AStartAddress) != NRFX_SUCCESS)
+  {
+    if (Debug_On)
+    {
       Serial.print("(QSPI_Initialise_Page) QSPI Address 0x");
       Serial.print(AStartAddress, HEX);
       Serial.println(" failed to erase!");
     }
-  } else {    
-    if (Debug_On) {
+  }
+  else
+  {
+    if (Debug_On)
+    {
       TimeTaken = millis() - TimeTaken;
       Serial.print("(QSPI_Initialise_Page) QSPI took ");
       Serial.print(TimeTaken);
@@ -421,105 +506,118 @@ static void QSPI_Erase(uint32_t AStartAddress) {
   flash_header[0] = 0;
   flash_header[1] = 0;
 }
- 
+
 // Initialize log storage by reading header from flash
-static void initLogStorage() {
+static void initLogStorage()
+{
   QSPI_WaitForReady();
- 
+
   // Read header
-  if (nrfx_qspi_read(flash_header, FLASH_HEADER_SIZE, 0) != NRFX_SUCCESS) {
+  if (nrfx_qspi_read(flash_header, FLASH_HEADER_SIZE, 0) != NRFX_SUCCESS)
+  {
     Serial.println("Failed to read flash header");
-    flash_header[0] = 0;  // entry count
-    flash_header[1] = 0;  // write position
-   
+    flash_header[0] = 0; // entry count
+    flash_header[1] = 0; // write position
+
     // Write initialized header back to flash
     QSPI_WaitForReady();
     nrfx_qspi_write(flash_header, FLASH_HEADER_SIZE, 0);
   }
- 
+
   Serial.print("Log storage initialized: entries=");
   Serial.print(flash_header[0]);
   Serial.print(", position=");
   Serial.println(flash_header[1]);
-  
+
   // Print struct size for debugging
   Serial.print("Size of LogEntry: ");
   Serial.println(sizeof(LogEntry));
   Serial.print("Expected size: ");
   Serial.println(4 + MAX_STRING_LENGTH); // timestamp + data
 }
- 
+
 // Write a string entry to flash
-static void writeStringToFlash(const char* str) {
+static void writeStringToFlash(const char *str)
+{
   memset(&current_entry, 0, sizeof(LogEntry));
   current_entry.timestamp = millis();
   strncpy(current_entry.data, str, MAX_STRING_LENGTH - 1);
   current_entry.data[MAX_STRING_LENGTH - 1] = '\0'; // Ensure null termination
- 
+
   // Calculate position to write
   uint32_t position = FLASH_HEADER_SIZE + (flash_header[1] * sizeof(LogEntry));
- 
+
   // Write the entry
   QSPI_WaitForReady();
-  if (nrfx_qspi_write(&current_entry, sizeof(LogEntry), position) != NRFX_SUCCESS) {
+  if (nrfx_qspi_write(&current_entry, sizeof(LogEntry), position) != NRFX_SUCCESS)
+  {
     Serial.println("Failed to write log entry");
     return;
   }
- 
+
   // Update header
   flash_header[0] = min(flash_header[0] + 1, MAX_ENTRIES);
   flash_header[1] = (flash_header[1] + 1) % MAX_ENTRIES;
- 
+
   QSPI_WaitForReady();
-  if (nrfx_qspi_write(flash_header, FLASH_HEADER_SIZE, 0) != NRFX_SUCCESS) {
+  if (nrfx_qspi_write(flash_header, FLASH_HEADER_SIZE, 0) != NRFX_SUCCESS)
+  {
     Serial.println("Failed to update header");
   }
 
   Serial.print("Wrote string to flash: ");
   Serial.println(str);
 }
- 
+
 // Read all entries from flash and output to Serial
-static void readAllEntries() {
+static void readAllEntries()
+{
   uint32_t count = flash_header[0];
   uint32_t start_pos;
- 
-  if (count == 0) {
+
+  if (count == 0)
+  {
     Serial.println("No entries found");
     return;
   }
- 
-  if (count < MAX_ENTRIES) {
+
+  if (count < MAX_ENTRIES)
+  {
     start_pos = 0;
-  } else {
+  }
+  else
+  {
     // Circular buffer is full, start from oldest entry
     start_pos = flash_header[1];
   }
- 
+
   Serial.print("Reading ");
   Serial.print(count);
   Serial.println(" entries:");
- 
+
   // Clear buffer first
   memset(read_buffer, 0, sizeof(read_buffer));
- 
+
   // Read all entries
   QSPI_WaitForReady();
-  for (uint32_t i = 0; i < count; i++) {
+  for (uint32_t i = 0; i < count; i++)
+  {
     uint32_t idx = (start_pos + i) % MAX_ENTRIES;
     uint32_t position = FLASH_HEADER_SIZE + (idx * sizeof(LogEntry));
-   
-    if (nrfx_qspi_read(&read_buffer[i], sizeof(LogEntry), position) != NRFX_SUCCESS) {
+
+    if (nrfx_qspi_read(&read_buffer[i], sizeof(LogEntry), position) != NRFX_SUCCESS)
+    {
       Serial.print("Failed to read entry at position ");
       Serial.println(position);
       continue;
     }
-    
+
     // Print entry more carefully
     Serial.print(i);
-    
+
     // Explicitly print each character
-    for (int j = 0; j < MAX_STRING_LENGTH && read_buffer[i].data[j] != '\0'; j++) {
+    for (int j = 0; j < MAX_STRING_LENGTH && read_buffer[i].data[j] != '\0'; j++)
+    {
       Serial.write(read_buffer[i].data[j]);
     }
     Serial.println();
@@ -562,18 +660,33 @@ void loop()
   step_count();
   unsigned long currenttime = millis();
 
-  // Create motion string with timestamp and current motion
-  char motionBuffer[MAX_STRING_LENGTH];
-  snprintf(motionBuffer, MAX_STRING_LENGTH - 1, "%lu %s", currenttime, currentMotion.c_str());
-
-  if (central){
+  if (central)
+  {
+    // Create motion string with timestamp and current motion
+    char motionBuffer[MAX_STRING_LENGTH];
+    snprintf(motionBuffer, MAX_STRING_LENGTH - 1, "%lu %s", currenttime, currentMotion.c_str());
     txPredCharacteristic.writeValue(motionBuffer);
-    if (flash_header[0] != 0){
+    if (flash_header[0] != 0)
+    {
       readAllEntries();
       QSPI_Erase(0);
     }
+    if (pCounter != 0)
+    {
+      pCounter = 0;
+    }
   }
-  else {
-    writeStringToFlash(motionBuffer);
+  else
+  {
+    predictions[pCounter++] = currentMotion;
+    // Create motion string with timestamp and current motion
+    if (pCounter == PSIZE)
+    {
+      pCounter = 0;
+      String finalMotion = getFinalPrediction();
+      char motionBuffer[MAX_STRING_LENGTH];
+      snprintf(motionBuffer, MAX_STRING_LENGTH - 1, "%lu %s", currenttime, finalMotion.c_str());
+      writeStringToFlash(motionBuffer);
+    }
   }
 }
